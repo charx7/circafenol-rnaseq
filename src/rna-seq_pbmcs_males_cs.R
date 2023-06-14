@@ -173,6 +173,10 @@ sampleDistMatrix_chrono <- as.matrix(sampleDists_chrono)
 sampleDists_stim <- dist(t(vst_stimulus))
 sampleDistMatrix_stim <- as.matrix(sampleDists_stim)
 
+sampledists_chrono_gspe <- dist(t(vst_chrono_gspe))
+sampleDistMatrix_chrono_gspe <- as.matrix(sampledists_chrono_gspe)
+
+
 # By using brewer.pal() we can generate a palette of colors, for more colors check (http://colorbrewer2.org/)
 colors <- colorRampPalette(brewer.pal(9, "GnBu"))(255)
 
@@ -190,9 +194,19 @@ pheatmap(
   sampleDistMatrix_stim,
   main = "L11GSPE vs L11VH",
   show_colnames = FALSE,
-  annotation = stimulated_col_data[,c("treatment", "type")],
+  annotation = stimulus_col_data[,c("treatment", "type")],
   clustering_distance_rows=sampleDists_stim,
   clustering_distance_cols=sampleDists_stim,
+  col=colors
+)
+
+pheatmap(
+  sampleDistMatrix_chrono_gspe,
+  main = "Control vs L11GSPE",
+  show_colnames = FALSE,
+  annotation = chrono_gspe_col_data[,c("treatment", "type")],
+  clustering_distance_rows=sampledists_chrono_gspe,
+  clustering_distance_cols=sampledists_chrono_gspe,
   col=colors
 )
 
