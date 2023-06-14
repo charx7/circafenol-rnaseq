@@ -58,6 +58,11 @@ stimulus_sample_names <- rownames(col_data)[which(col_data$treatment != "control
 stimulus_count_table <- count_data_final[, stimulus_sample_names]
 stimulus_col_data <- col_data[stimulus_sample_names,]
 
+# chronodisruption GSPE vs control
+chrono_gspe_sample_names <- rownames(col_data)[which(col_data$treatment != "L11-VH")]
+chrono_gspe_count_table <-count_data_final[, chrono_gspe_sample_names]
+chrono_gspe_col_data <- col_data[chrono_gspe_sample_names,]
+
 # get deseq datasets
 dds_chronodisruption <- DESeqDataSetFromMatrix(
   countData = chronodisruption_count_table,
@@ -66,8 +71,14 @@ dds_chronodisruption <- DESeqDataSetFromMatrix(
 )
 
 dds_stimulus <- DESeqDataSetFromMatrix(
-  countData = stimulated_count_table,
+  countData = stimulus_count_table,
   colData = stimulus_col_data,
+  design = ~ treatment
+)
+
+dds_chrono_gspe <- DESeqDataSetFromMatrix(
+  countData = chrono_gspe_count_table,
+  colData = chrono_gspe_col_data,
   design = ~ treatment
 ) 
 
@@ -78,10 +89,13 @@ dds_chronodisruption <- dds_chronodisruption[keeps,]
 keeps <- rowSums(counts(dds_stimulus) >= 10)
 dds_stimulus <- dds_stimulus[keeps,]
 
+keeps <- rowSums(counts(dds_chrono_gspe) >= 10)
+dds_chrono_gspe <- dds_chrono_gspe[keeps,]
+
 # Variance stabilizing transformations
 vst_chronodisruption <- assay(vst(dds_chronodisruption, blind=FALSE))
 vst_stimulus <- assay(vst(dds_stimulus, blind=FALSE))
-
+vst_chrono_gspe <- assay(vst(dds_chrono_gspe, blind=FALSE))
 
 ## PCA
 # To calculate the components by sample we need to transpose our matrix of normalized gene expression 
@@ -91,9 +105,13 @@ pcVar_chrono <- summary(pcData_chrono)
 pcData_stim <- prcomp(t(vst_stimulus))
 pcVar_stim <- summary(pcData_stim)
 
+pcData_chrono_gspe <- prcomp(t(vst_chrono_gspe))
+pcVar_chrono_gspe <- summary(pcData_chrono_gspe)
+
 # By getting the summary() of a prcomp object (in this case pcData) we can also obtain the total amount of variance explained by each of the components.
 pcVar_chrono$importance
 pcVar_stim$importance
+pcVar_chrono_gspe$importance
 
 # We can then extract the variance explained by components 1 and 2. 
 varPC1_chrono <- pcVar_chrono$importance[2,1]
@@ -102,9 +120,12 @@ varPC2_chrono <- pcVar_chrono$importance[2,2]
 varPC1_stim <- pcVar_stim$importance[2,1]
 varPC2_stim <- pcVar_stim$importance[2,2]
 
+varPC1_chrono_gspe <- pcVar_chrono_gspe$importance[2,1]
+varPC2_chrono_gspe <- pcVar_chrono_gspe$importance[2,2]
 
 pcPlotData_chrono <- data.frame(pcData_chrono$x[,1:4], col_data[rownames(pcData_chrono$x),])
 pcPlotData_stim <- data.frame(pcData_stim$x[,1:4], col_data[rownames(pcData_stim$x),])
+pcPlotData_chrono_gspe <- data.frame(pcData_chrono_gspe$x[,1:4], col_data[rownames(pcData_chrono_gspe$x),])
 
 
 pcaPlot_chronodisruption <- ggplot(pcPlotData_chrono, aes(x=PC1 , y=PC2 , color=treatment))+
@@ -117,6 +138,7 @@ pcaPlot_chronodisruption <- ggplot(pcPlotData_chrono, aes(x=PC1 , y=PC2 , color=
   theme(legend.position = "bottom")+
   guides(col = guide_legend(ncol = 8))
 
+pcaPlot_chronodisruption
 
 pcaPlot_stim <- ggplot(pcPlotData_stim, aes(x=PC1 , y=PC2 , color=treatment))+
   geom_jitter(alpha=0.6)+
@@ -129,6 +151,18 @@ pcaPlot_stim <- ggplot(pcPlotData_stim, aes(x=PC1 , y=PC2 , color=treatment))+
   guides(col = guide_legend(ncol = 8))
 
 pcaPlot_stim
+
+pcaPlot_chrono_gspe <- ggplot(pcPlotData_chrono_gspe, aes(x=PC1 , y=PC2 , color=treatment))+
+  geom_jitter(alpha=0.6)+
+  #facet_grid(~stimulation, scales = "free")+
+  xlab(paste0("PC1 explained variance = ", varPC1_chrono_gspe*100, "%"))+
+  ylab(paste0("PC2 explained variance = ", varPC2_chrono_gspe*100, "%"))+
+  scale_color_aaas()+
+  theme_bw()+
+  theme(legend.position = "bottom")+
+  guides(col = guide_legend(ncol = 8))
+
+pcaPlot_chrono_gspe
 
 # Unsupervised clustering
 
