@@ -7,6 +7,8 @@ library(gridExtra)
 library(ggsci)
 library(pheatmap)
 library(reshape2)
+library(ggrepel)
+library(VennDiagram)
 
 # read the data
 excel_path = "/home/rstudio/scripts/data/gene_count_matrix.xlsx"
@@ -215,7 +217,8 @@ pheatmap(
 # To properly compare control versus chronodisruption, we need to define that in our colData objects, 
 # therefore we need to set the colData$type as a factor, and the firs level should be control 
 chronodisruption_col_data$treatment <- factor(chronodisruption_col_data$treatment, levels= c("control", "L11-VH"))
-stimulus_col_data$treatment <- factor(stimulated_col_data$treatment, levels= c("L11-VH", "L11-GSPE"))
+stimulus_col_data$treatment <- factor(stimulus_col_data$treatment, levels= c("L11-VH", "L11-GSPE"))
+chrono_gspe_col_data$treatment <- factor(chrono_gspe_col_data$treatment, levels= c("control", "L11-GSPE"))
 
 # We now generate the new DESeq objects and run the differential expression analysis.
 dds_chronodisruption <- DESeqDataSetFromMatrix(
@@ -230,6 +233,11 @@ dds_stim <- DESeqDataSetFromMatrix(
   design = ~ treatment
 )
 
+dds_chrono_gspe <- DESeqDataSetFromMatrix(
+  countData = chrono_gspe_count_table,
+  colData = chrono_gspe_col_data,
+  design = ~ treatment
+)
 
 dds_chronodisruption <- DESeq(dds_chronodisruption)
 res_chronodisruption <- results(dds_chronodisruption)
@@ -239,6 +247,10 @@ dds_stim <- DESeq(dds_stim)
 res_stim <- results(dds_stim)
 head(res_stim)
 
+dds_chrono_gspe <- DESeq(dds_chrono_gspe)
+res_chrono_gspe <- results(dds_chrono_gspe)
+head(res_chrono_gspe)
+
 # Given the conditions we declared for differential expression analysis we can subset our list of 
 de_chronodisruption <- res_chronodisruption[which(res_chronodisruption$padj <= 0.05),]
 head(de_chronodisruption)
@@ -246,13 +258,17 @@ head(de_chronodisruption)
 de_stim <- res_stim[which(res_stim$padj <= 0.05),]
 head(de_stim)
 
+de_chrono_gspe <- res_chrono_gspe[which(res_chrono_gspe$padj <= 0.05),]
+head(de_chrono_gspe)
+
 # how many differentially expressed genes we got
 nrow(de_chronodisruption)
 nrow(de_stim)  # there are no DE genes in L11-VH vs L11-GPSE
+nrow(de_chrono_gspe)
 
 # Vizualization Volcano plot
-pData <- as.data.frame(res_chronodisruption[which(!is.na(res_chronodisruption$padj)),])
-chronodisruption_Volcano <- ggplot(pData, aes(x=log2FoldChange, y= -log10(padj)))+
+pData_chrono <- as.data.frame(res_chronodisruption[which(!is.na(res_chronodisruption$padj)),])
+chronodisruption_Volcano <- ggplot(pData_chrono, aes(x=log2FoldChange, y= -log10(padj)))+
   geom_point(aes(color= padj <= 0.05))+
   geom_hline(yintercept = 0, lwd=1, alpha= 0.6)+
   geom_vline(xintercept = 0, lwd=1, alpha= 0.6)+
@@ -268,15 +284,30 @@ de_chronodisruption[order(de_chronodisruption$padj, decreasing = FALSE), ]
 # plot disperssion estimates
 plotDispEsts(dds_chronodisruption)
 
+# Volcano plot control vs l11-GSPE
+pData_chrono_gspe <- as.data.frame(res_chrono_gspe[which(!is.na(res_chrono_gspe$padj)),])
+chrono_gspe_Volcano <- ggplot(pData_chrono_gspe, aes(x=log2FoldChange, y= -log10(padj)))+
+  geom_point(aes(color= padj <= 0.05))+
+  geom_hline(yintercept = 0, lwd=1, alpha= 0.6)+
+  geom_vline(xintercept = 0, lwd=1, alpha= 0.6)+
+  scale_color_d3()+
+  ggtitle("Chronodisruption-GSPE Volcano Plot")+
+  theme_bw()
+
+chrono_gspe_Volcano
+
 # The write.csv function will generate an Excel "friendly" file.
 chrono_fileName <- "./scripts/results/diffExpGenes_chronodisruption.csv"
 write.csv(de_chronodisruption, chrono_fileName)
 
-# prettier volcano plot
-pData$top10label <- NA
-pData$top10label[order(pData$padj)[1:10]] <- rownames(pData)[order(pData$padj)[1:10]]
+chrono_gspe_filename <- "./scripts/results/diffExpGenes_chrono_gspe.csv"
+write.csv(de_chrono_gspe, chrono_gspe_filename)
 
-chronodisruption_Volcano <- ggplot(pData, aes(x=log2FoldChange, y= -log10(padj)))+
+# prettier volcano plot
+pData_chrono$top10label <- NA
+pData_chrono$top10label[order(pData_chrono$padj)[1:10]] <- rownames(pData_chrono)[order(pData_chrono$padj)[1:10]]
+
+chronodisruption_Volcano <- ggplot(pData_chrono, aes(x=log2FoldChange, y= -log10(padj)))+
   geom_point(aes(color= padj <= 0.05))+
   geom_hline(yintercept = 0, lwd=1, alpha= 0.6)+
   geom_vline(xintercept = 0, lwd=1, alpha= 0.6)+
@@ -288,10 +319,29 @@ chronodisruption_Volcano <- ggplot(pData, aes(x=log2FoldChange, y= -log10(padj))
 
 chronodisruption_Volcano
 
+pData_chrono_gspe$top10label <- NA
+pData_chrono_gspe$top10label[order(pData_chrono_gspe$padj)[1:10]] <- rownames(pData_chrono_gspe)[order(pData_chrono_gspe$padj)[1:10]]
+
+chrono_gspe_Volcano <- ggplot(pData_chrono_gspe, aes(x=log2FoldChange, y= -log10(padj)))+
+  geom_point(aes(color= padj <= 0.05))+
+  geom_hline(yintercept = 0, lwd=1, alpha= 0.6)+
+  geom_vline(xintercept = 0, lwd=1, alpha= 0.6)+
+  scale_color_d3()+
+  ggtitle("Control vs L11GSPE Volcano Plot")+
+  geom_text_repel(aes(label=top10label))+ ##add the lables in the top 10 
+  theme_bw()+
+  theme(legend.position = "bottom")
+
+chrono_gspe_Volcano
+
 # Heatmap of differentially expressed genes
 vst_chronodisruption <- assay(vst(dds_chronodisruption))
-deGenes <- vst_chronodisruption[rownames(de_chronodisruption),]
-pheatmap(deGenes, scale = "row", show_rownames = FALSE, main = "Differentially expressed genes chronodisruption")
+deGenes_chrono <- vst_chronodisruption[rownames(de_chronodisruption),]
+pheatmap(deGenes_chrono, scale = "row", show_rownames = FALSE, main = "Differentially Expressed Genes Chronodisruption")
+
+vst_chrono_gspe <- assay(vst(dds_chrono_gspe))
+deGenes_chrono_gspe <- vst_chrono_gspe[rownames(de_chrono_gspe),]
+pheatmap(deGenes_chrono_gspe, scale = "row", show_rownames = FALSE, main = "Differentially Expressed Genes Control vs L11GSPE")
 
 # Boxplot of differentially expressed (top10) genes
 top10Genes <- rownames(de_chronodisruption)[order(de_chronodisruption$padj)[1:10]]
@@ -311,6 +361,20 @@ top10_Plot <- ggplot(pData, aes(x= type, y= value))+
   theme(axis.text.x = element_text(angle=45, hjust = 1))
 
 print(top10_Plot)
+
+# Venn diagram
+DEG_list <- list(
+  Control_L11 = rownames(de_chronodisruption),
+  Control_GSPE = rownames(de_chrono_gspe)
+)
+
+vennDiagram <- venn.diagram(
+  DEG_list, 
+  filename = NULL,
+  main = "Shared Differential expressed genes between treatments"
+)
+
+grid.draw(vennDiagram)
 
 # Pathway analysis
 chrono <- res_chronodisruption
