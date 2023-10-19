@@ -3,6 +3,9 @@ if (!requireNamespace("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
 
 BiocManager::install("DESeq2")  # for differential expression analysis
+BiocManager::install("KEGGREST")
+BiocManager::install("org.Hs.eg.db")  # Human gene annotation package
+BiocManager::install("clusterProfiler") # Package for enrichment tests
 
 # other packages
 install.packages("ggplot2") # for plotting

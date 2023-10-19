@@ -390,13 +390,86 @@ table(chrono[is.na(chrono$log2FoldChange), ]$baseMean == 0)
 # Data cleaning, remove unexpressed genes (baseMean = 0)
 chrono <- chrono[!chrono$baseMean == 0, ]
 
-library(purrr)  # functional map
-
+# translate to entrezid
 split_gene_string <- function(gene_name) {
   # implicit return
-  unlist(strsplit(unlist(strsplit(gene_name, "-"))[2], "\\|"))[1]
-}	
+  toupper(unlist(strsplit(unlist(strsplit(gene_name, "-"))[2], "\\|"))[1])
+}
 
-# need to dynamically split the string and parse to get the HGNC gene symbols and
-# then convert to ENTREZ IDs
+# convert HGNC gene symbols to more stable ENTREZ IDs
+chrono_names <- rownames(chrono)
+
+# clean the name to convert to entrezid
+res <- sapply(chrono_names, FUN=split_gene_string)
+res <- as.vector(res)
+
+# remove NA because of the weird 1.2|loc23434
+na_idx <- is.na(res)
+res <- res[!na_idx]
+
+# convert to entrezid
+entrez <- bitr(
+  res,
+  fromType = "SYMBOL",
+  toType = "ENTREZID",
+  OrgDb = "org.Hs.eg.db"
+)
+
+# Convert ENTREZ to text, so that R would process it correctly
+entrez$ENTREZID <- as.character(entrez$ENTREZID)
+
+
+# pending XD cansaos
+
+# filter out those values with an na on padj
+# Note on p-values set to NA: some values in the results table can be set to NA for one of the following reasons:
+#  
+#  If within a row, all samples have zero counts, the baseMean column will be zero, and the log2 fold change estimates, p value and adjusted p value will all be set to NA.
+# If a row contains a sample with an extreme count outlier then the p value and adjusted p value will be set to NA. These outlier counts are detected by Cook’s distance. Customization of this outlier filtering and description of functionality for replacement of outlier counts and refitting is described below
+# If a row is filtered by automatic independent filtering, for having a low mean normalized count, then only the adjusted p value will be set to NA. Description and customization of independent filtering is described below
+# https://bioconductor.org/packages/release/bioc/vignettes/DESeq2/inst/doc/DESeq2.html#outlier
+chrono <- chrono[!is.na(chrono$padj), ]
+
+# keep only padj < 0.05 and large fold changes
+chrono_sig <- chrono[chrono$padj < 0.05 & abs(chrono$log2FoldChange) > 1, ]
+
+# convert HGNC gene symbols to more stable ENTREZ IDs
+gene_names <- rownames(chrono_sig)
+
+library(clusterProfiler) # for gene ontology analysis
+
+	
+
+# apply function
+res <- sapply(gene_names, FUN=split_gene_string)
+res <- as.vector(res)
+
+# add the 'cleaned' names to the dataframe
+chrono_sig$cleaned_names <- res
+
+# get entrezid
+entrez <- bitr(res, fromType = "SYMBOL", toType = "ENTREZID", OrgDb = "org.Hs.eg.db")
+
+# Convert ENTREZ to text, so that R would process it correctly
+entrez$ENTREZID <- as.character(entrez$ENTREZID)
+
+dataframe_chrono_sig <- as(chrono_sig,"data.frame")
+dataframe_chrono_sig <- merge(dataframe_chrono_sig, entrez, by.x = 'cleaned_names', by.y = 'SYMBOL')
+
+# Order gene table by effect size (log2 fold-change), from largest to smallest
+dataframe_chrono_sig <- dataframe_chrono_sig[order(dataframe_chrono_sig$log2FoldChange, decreasing = T), ]
+
+# Look at the range of fold changes
+plot(dataframe_chrono_sig$log2FoldChange, xlab = 'Gene', ylab = 'log2(FC)')
+
+# Prepare data for GSEA (vector of log2(FC)'s, named by ENTREZ IDs)
+dataframe_chrono_sig_gsea <- dataframe_chrono_sig$log2FoldChange
+names(dataframe_chrono_sig_gsea) <- dataframe_chrono_sig$ENTREZID
+
+# This vector of gene names corresponds to all genes we tested in the analysis and will be used later as "gene universe"
+KEGG_all <- enrichKEGG(gene = cd3_sig$ENTREZID,
+                       organism = 'hsa',
+                       universe = cd3$ENTREZID,
+                       pvalueCutoff = 1, 
+                       qvalueCutoff = 1)
 
