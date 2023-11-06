@@ -4,8 +4,11 @@ if (!requireNamespace("BiocManager", quietly = TRUE))
 
 BiocManager::install("DESeq2")  # for differential expression analysis
 BiocManager::install("KEGGREST")
-BiocManager::install("org.Hs.eg.db")  # Human gene annotation package
+#BiocManager::install("org.Hs.eg.db")  # Human gene annotation package
+BiocManager::install("org.Rn.eg.db")  # rat gene annotation package
 BiocManager::install("clusterProfiler") # Package for enrichment tests
+BiocManager::install("topGO")  # Gene Ontology vizualization
+BiocManager::install("Rgraphviz")  # graph viz
 
 # other packages
 install.packages("ggplot2") # for plotting
