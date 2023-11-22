@@ -383,150 +383,148 @@ summary(chrono)
 # genes with NA for log2FoldChange
 head(chrono[is.na(chrono$log2FoldChange), ])
 
+
 # How many such genes?
 table(chrono[is.na(chrono$log2FoldChange), ]$baseMean == 0)
 
 # Data cleaning, remove unexpressed genes (baseMean = 0)
 chrono <- chrono[!chrono$baseMean == 0, ]
 
-# convert the DESEQ2 results object into dataframe
-dataframe_chrono <- as(chrono,"data.frame")
+# translate to entrezid
+split_gene_string <- function(gene_name) {
+  split_string = unlist(strsplit(gene_name, "-"))
+  
+  # check if the gene is of type 'gene-LOC2343434'
+  if (length(unlist(split_string)) == 1){
+    return(toupper(unlist(strsplit(gene_name, "\\|"))[2])) 
+  } else if (is.na(unlist(strsplit(gene_name, "\\|"))[2])) {
+    return (
+      toupper(unlist(strsplit(gene_name, "-"))[2])
+    )
+  } else {
+    return (
+      toupper(unlist(strsplit(gene_name, "\\|"))[2])
+    )
+  }
+}
 
 # convert HGNC gene symbols to more stable ENTREZ IDs
 chrono_names <- rownames(chrono)
 
-# read the gene keys
-excel_path = "/home/rstudio/scripts/data/gene_keys.xlsx"
-gene_names <- read_excel(
-  excel_path,
-  sheet = "Sheet1"
-)
+# convert the DESEQ2 results object into dataframe
+dataframe_chrono <- as(chrono,"data.frame")
 
-# add gene_id as colname
-dataframe_chrono["gene_id"] = rownames(dataframe_chrono)
+# clean the name to convert to entrezid
+res <- sapply(chrono_names, FUN=split_gene_string)
+res <- as.vector(res)
 
-# merge with the original results dataframe to keep only valid entrezid
-dataframe_chrono_merged <- merge(
-  dataframe_chrono, gene_names, by.x = 'gene_id', by.y = 'gene_id'
-)
-
-library(clusterProfiler) # for gene ontology analysis
-library("org.Rn.eg.db")
+# add the 'cleaned' names to the dataframe
+dataframe_chrono$cleaned_names <- res
 
 # convert to entrezid
 entrez <- bitr(
-  dataframe_chrono_merged$`gene name`,
+  res,
   fromType = "SYMBOL",
   toType = "ENTREZID",
   OrgDb = "org.Rn.eg.db"
   #OrgDb = "org.Hs.eg.db"
 )
 
+#library("org.Rn.eg.db")
+#entrez2 <- mapIds(org.Rn.eg.db,
+#       keys=res,
+#       column="ENTREZID",
+#       keytype="SYMBOL",
+#       multiVals="first")
+
 # Convert ENTREZ to text, so that R would process it correctly
 entrez$ENTREZID <- as.character(entrez$ENTREZID)
 
-# merge with the original dataframe to get the entrez ids in the UNIVERSE
-dataframe_chrono_merged <- merge(dataframe_chrono_merged, entrez, by.x = 'gene name', by.y = 'SYMBOL')
+# remove weird na because of duplicated genenames but different internal gene annotation
+non_dups <- dataframe_chrono[!duplicated(dataframe_chrono$cleaned_names),]
 
-# remove na
-dataframe_chrono_merged_adj <- dataframe_chrono_merged[!is.na(dataframe_chrono_merged$padj),]
+# merge with the original results dataframe to keep only valid entrezid
+dataframe_chrono_merged <- merge(
+  non_dups, entrez, by.x = 'cleaned_names', by.y = 'SYMBOL'
+)
+
 
 # Prepare the data for overrepresentation tests
 # Filter in significant (adjusted P<0.05) results
-# Filter in only genes with larger than than 2-fold expression change 
+# Filter in only genes with larger than than 1, 2-fold expression change 
+# filter padj existing because we can have undefined padj why???
+dataframe_chrono_merged_adj <- dataframe_chrono_merged[!is.na(dataframe_chrono_merged$padj),]
 chrono_sig <- dataframe_chrono_merged_adj[dataframe_chrono_merged_adj$padj < 0.05 & abs(dataframe_chrono_merged_adj$log2FoldChange) > 1, ]
-
-# Order gene table by effect size (log2 fold-change), from largest to smallest
-universe <- dataframe_chrono_merged_adj 
-universe <- universe[order(universe$log2FoldChange, decreasing = T), ]
-
-# Look at the range of fold changes
-plot(universe$log2FoldChange, xlab = 'Gene', ylab = 'log2(FC)')
-
-# Prepare data for GSEA (vector of log2(FC)'s, named by ENTREZ IDs)
-universe_gsea <- universe$log2FoldChange
-names(universe_gsea) <- universe$ENTREZID
-# This vector of gene names corresponds to all genes we tested in the analysis and will be used later as "gene universe"
-
-# Over-representation analyses (ORA)
-# Run KEGG over-representation analysis
-KEGG_all <- enrichKEGG(gene = chrono_sig$ENTREZID,
-                       organism = 'rat',
-                       universe = universe$ENTREZID,
-                       pvalueCutoff = 1, 
-                       qvalueCutoff = 1)
-
-# to change to a readable format
-library("DOSE")
-
-# this command converts ENTREZ IDs back to HGNC symbols to ease interpretation
-KEGG_all <- setReadable(KEGG_all, OrgDb = 'org.Rn.eg.db', keyType="ENTREZID")
-
-# look at some slots
-head(KEGG_all@result, 5)  # result table
-KEGG_all@ontology         # what ontology was tested
-KEGG_all@pvalueCutoff     # what P-value cutoff was used
-
-View(head(KEGG_all@result[, -8], 25))
-
-# plot
-input_barplot <- KEGG_all@result[, -8]
-input_barplot$Description <- factor(input_barplot$Description, levels = rev(as.character(input_barplot$Description)))
-
-# here we apply the default significance thresholds (Benjamini-Hochberg P<0.05 and Storey Q-value<0.2)
-input_barplot <- input_barplot[input_barplot$p.adjust < 0.1 & input_barplot$qvalue < 0.5, ]
-
-ggplot(input_barplot, aes(x = Description, y = -log10(pvalue), fill = Count)) + geom_bar(stat = 'identity') + 
-  theme_classic() + 
-  coord_flip() + scale_fill_continuous(low = 'lightblue', high = 'salmon')
-
-# Adjust the size of the plots, if necessary
-ggsave('~/scripts/results/KEGG_barplot.png', units = 'in', height = 6, width = 6, dpi = 400)
 
 # change names of the universe
 # This vector of gene names corresponds to all genes we tested in the analysis and will be used later as "gene universe"
 dataframe_chrono_merged_gsea <- dataframe_chrono_merged$log2FoldChange
 names(dataframe_chrono_merged_gsea) <- dataframe_chrono_merged$ENTREZID
 
-# GENE ONTOLOGY
-GO_all <- enrichGO(gene = chrono_sig$ENTREZID,
-                   universe = universe$ENTREZID,
-                   OrgDb = 'org.Rn.eg.db',
-                   ont = 'all',
-                   pvalueCutoff = 0.05, 
-                   qvalueCutoff = 0.05,
-                   minGSSize = 10, 
-                   maxGSSize = 10000)
+# KEGG
+KEGG_all <- enrichKEGG(
+  gene = chrono_sig$ENTREZID,
+  organism = 'hsa',
+  universe = dataframe_chrono_merged$ENTREZID,
+  pvalueCutoff = 1, 
+  qvalueCutoff = 1
+)
 
-# remove 8. column which is long and uninformative and display 25 most significant rows.
-View(head(GO_all@result[, -8], 25))
+# this command converts ENTREZ IDs back to HGNC symbols to ease interpretation
+KEGG_all <- setReadable(KEGG_all, OrgDb = 'org.Hs.eg.db', keyType="ENTREZID")
 
-library("topGO")
-plotGOgraph(GO_all, firstSigNodes = 10)
 
-# gene ontology plot
-goplot(GO_all)
-dotplot(GO_all)
 
-# Not for rats :(
-# Run Disease Ontology over-representation analysis
-DO_all <- enrichDO(gene = chrono_sig$ENTREZID,
-                   universe = universe$ENTREZID,
-                   ont = "DO",
-                   pvalueCutoff = 1, 
-                   qvalueCutoff = 1)
+###### NON USED BELOW
+# filter out those values with an na on padj
+# Note on p-values set to NA: some values in the results table can be set to NA for one of the following reasons:
+#  
+#  If within a row, all samples have zero counts, the baseMean column will be zero, and the log2 fold change estimates, p value and adjusted p value will all be set to NA.
+# If a row contains a sample with an extreme count outlier then the p value and adjusted p value will be set to NA. These outlier counts are detected by Cook’s distance. Customization of this outlier filtering and description of functionality for replacement of outlier counts and refitting is described below
+# If a row is filtered by automatic independent filtering, for having a low mean normalized count, then only the adjusted p value will be set to NA. Description and customization of independent filtering is described below
+# https://bioconductor.org/packages/release/bioc/vignettes/DESeq2/inst/doc/DESeq2.html#outlier
+chrono <- chrono[!is.na(chrono$padj), ]
 
-# Gene set enrichment analysis (GSEA)
-KEGG_GSEA <- gseKEGG(geneList = universe_gsea,
-                     organism = 'rat',
-                     nPerm = 10000,
-                     minGSSize = 50,
-                     pvalueCutoff = 0.9,
-                     verbose = FALSE)
+# keep only padj < 0.05 and large fold changes
+chrono_sig <- chrono[chrono$padj < 0.05 & abs(chrono$log2FoldChange) > 1, ]
 
-View(head(KEGG_GSEA@result[, -c(10:12)], 25))
+# convert HGNC gene symbols to more stable ENTREZ IDs
+gene_names <- rownames(chrono_sig)
 
-gseaplot(KEGG_GSEA, geneSetID = head(KEGG_GSEA@result, 1)$ID)
+library(clusterProfiler) # for gene ontology analysis
 
-# nice plot (dotplot for the enriched pathways)
-dotplot(KEGG_GSEA, showCategory=15, font.size=9, label_format= 100, title = "Enriched Pathways" , split=".sign") + facet_grid(.~.sign)
+	
+
+# apply function
+res <- sapply(gene_names, FUN=split_gene_string)
+res <- as.vector(res)
+
+# add the 'cleaned' names to the dataframe
+chrono_sig$cleaned_names <- res
+
+# get entrezid
+entrez <- bitr(res, fromType = "SYMBOL", toType = "ENTREZID", OrgDb = "org.Hs.eg.db")
+
+# Convert ENTREZ to text, so that R would process it correctly
+entrez$ENTREZID <- as.character(entrez$ENTREZID)
+
+dataframe_chrono_sig <- as(chrono_sig,"data.frame")
+dataframe_chrono_sig <- merge(dataframe_chrono_sig, entrez, by.x = 'cleaned_names', by.y = 'SYMBOL')
+
+# Order gene table by effect size (log2 fold-change), from largest to smallest
+dataframe_chrono_sig <- dataframe_chrono_sig[order(dataframe_chrono_sig$log2FoldChange, decreasing = T), ]
+
+# Look at the range of fold changes
+plot(dataframe_chrono_sig$log2FoldChange, xlab = 'Gene', ylab = 'log2(FC)')
+
+# Prepare data for GSEA (vector of log2(FC)'s, named by ENTREZ IDs)
+dataframe_chrono_sig_gsea <- dataframe_chrono_sig$log2FoldChange
+names(dataframe_chrono_sig_gsea) <- dataframe_chrono_sig$ENTREZID
+
+# This vector of gene names corresponds to all genes we tested in the analysis and will be used later as "gene universe"
+KEGG_all <- enrichKEGG(gene = cd3_sig$ENTREZID,
+                       organism = 'hsa',
+                       universe = cd3$ENTREZID,
+                       pvalueCutoff = 1, 
+                       qvalueCutoff = 1)
+

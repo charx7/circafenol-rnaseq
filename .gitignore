@@ -1,3 +1,4 @@
 src/data/*xlsx
-src/results/*csv
-src/figures/*pdf
+src/results
+
+.DS_Store

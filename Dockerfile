@@ -1,4 +1,4 @@
-FROM rocker/verse:latest
+FROM rocker/rstudio:latest-daily
 
 # environmental variable necesarry to run the container
 ENV PASSWORD gyara2
@@ -6,7 +6,11 @@ ENV PASSWORD gyara2
 RUN apt-get update && apt-get install -y \
   build-essential \
   libcurl4-gnutls-dev \
-  libssl-dev 
+  libssl-dev \ 
+  zlib1g-dev \
+  libxt6 \
+  libpng-dev \
+  libfontconfig1-dev
 
 # Expose the necessary ports rstudio runs on 8787 on the container
 EXPOSE 8787
